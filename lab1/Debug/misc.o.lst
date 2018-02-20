@@ -1,0 +1,159 @@
+   1              	# 1 "../misc.S"
+   1              	
+   0              	
+   0              	
+   0              	
+   2              		.equ COEF1, 3483
+   3              		.equ COEF2, 11718
+   4              		.equ COEF3, 1183
+   5              	
+   6              		.text
+   7              	
+   8              		.global rgb2gray
+   9              		.global div16384
+  10              		.global apply_gaussian
+  11              		.global countWhite
+  12              		.extern gaussian
+  13              	
+  14              	rgb2gray:
+  15              		//We are using 2 registers above R3, R4 and R5 so there is a need for a push to dont erase the pre
+  16 0000 30402DE9 		push {R4,R5,lr}
+  17              	
+  18              		//in R0 there is the pointer to the char
+  19              		//dest = (3483*orig.R + 11718*orig.G + 1183*orig.B) /16384;
+  20              	
+  21              		//1st bit is R
+  22 0004 F4109FE5 		ldr  R1, =COEF1	//3483
+  23 0008 0020D0E5 		ldrb R2, [R0]	//orig.R
+  24 000c 910203E0 		mul  R3, R1, R2	//3483*orig.R		R3
+  25              	
+  26              		//2nd bit is G
+  27 0010 EC109FE5 		ldr  R1, =COEF2	//11718
+  28 0014 0120D0E5 		ldrb R2, [R0,#1]//orig.G
+  29 0018 910204E0 		mul  R4, R1, R2	//11718*orig.G		R4
+  30              	
+  31              		//3rd bit is B
+  32 001c E4109FE5 		ldr  R1, =COEF3	//1183
+  33 0020 0220D0E5 		ldrb R2, [R0,#2]//orig.G
+  34 0024 910205E0 		mul  R5, R1, R2	//1183*orig.B		R5
+  35              	
+  36 0028 043083E0 		add R3, R3, R4	//3483*orig.R + 11718*orig.G
+  37 002c 053083E0 		add R3, R3, R5	//3483*orig.R + 11718*orig.G + 1183*orig.B
+  38              	
+  39 0030 0300A0E1 		mov R0, R3		//to pass the number to be divided t the subrutine
+  40              	
+  41 0034 FEFFFFEB 		bl div16384 	//(3483*orig.R + 11718*orig.G + 1183*orig.B) /16384
+  42              						//as a aresult of the subrutine the result = ((3483*orig.R + 11718*orig.G + 1183*orig.B) /1638
+  43 0038 3080BDE8 		pop {R4,R5,pc}
+  44              	
+  45              	
+  46              	div16384:
+  47              			//R0 / 16384
+  48 003c 0119A0E3 			 ldr R1, =16384 //we load in R1 the value to divide
+  49 0040 0020A0E3 			 mov R2, #0		//result of division RES
+  50 0044 0130A0E1 			 mov R3, R1		//multiples of 16384 ACUM
+  51              	
+  52 0048 000053E1 		loop:cmp r3, r0		//is the acumulative of multiples greater or equal than the argument?
+  53 004c 020000AA 		 	 bge fin		//if it is, division done
+  54 0050 013083E0 			 add r3,r3,r1	//if doesnt, the accumulative grows 16384
+  55 0054 012082E2 			 add r2,r2,#1	//and the result of the diviion is one unit greater
+  56 0058 FAFFFFEA 			 b   loop		//and compare once more
+  57 005c 0200A0E1 		fin: mov r0,r2		//we place the resulltof the division on R0 (STANDARDS)
+  58              	
+  59 0060 0EF0A0E1 		 	 mov pc, lr		//restore program counter
+  60              	
+  61              	
+  62              	apply_gaussian:
+  63 0064 F0402DE9 				push {R4-R7 , lr}	//we use registers up to R7
+  64              			 //when the function is called the arguments are:
+  65              				//R0 - imagenGris[]
+  66              				//R1 - imagenGauss[]
+  67              				//R2 - N
+  68              				//R3 - M
+  69              	
+  70              			//redistribution of registers
+  71 0068 0150A0E1 				MOV R5, R1	//imagen gaus, result in R5
+  72 006c 0210A0E1 				MOV R1, R2	//N in R1 WIDTH
+  73 0070 0320A0E1 				MOV R2, R3	//M in R2 HEIGHT
+  74 0074 0030A0E3 				MOV R3, #0	//i index in R3
+  75              	
+  76 0078 020053E1 		for1:	CMP R3, R2
+  77 007c 0F0000AA 				BGE fin1
+  78              	
+  79 0080 0040A0E3 				MOV R4, #0	//j index; j = 0
+  80              	
+  81 0084 010054E1 		for2:	CMP R4, R1
+  82 0088 0A0000AA 				BGE fin2
+  83              	
+  84 008c 0F002DE9 				push {R0-R3}	//backup
+  85 0090 04402DE5 				push {R4}
+  86              				//push {R0-R4}
+  87              	
+  88 0094 FEFFFFEB 				BL gaussian
+  89 0098 0060A0E1 				MOV R6, R0 //R6 result de gaussian
+  90              	
+  91 009c 04409DE4 				pop {R4}
+  92 00a0 0F00BDE8 				pop {R0-R3}
+  93              				//ADD SP, SP, #4
+  94              				//pop {R0-R3}
+  95              	
+  96              				//im2[i * width + j]
+  97 00a4 930107E0 				MUL  R7, R3, R1	// i * width
+  98 00a8 047087E0 				ADD  R7, R7, R4	// R7 has (i * width + j)
+  99 00ac 0760C5E7 				STRB R6, [R5, R7]
+ 100              	
+ 101 00b0 014084E2 				ADD R4, R4, #1	//j++
+ 102 00b4 F2FFFFEA 				B	for2
+ 103              	
+ 104 00b8 013083E2 		fin2:	ADD R3, R3, #1	//i++
+ 105 00bc EDFFFFEA 				B for1
+ 106              	
+ 107 00c0 F080BDE8 		fin1:	pop {R4 - R7, pc}
+ 108              				//MOV PC, LR
+ 109              	
+ 110              		//int countWhite(unsigned char im[], int size){
+ 111 00c4 10082DE9 	countWhite: push {R4, fp}
+ 112 00c8 04B08DE2 				add fp, sp, #4
+ 113              	
+ 114 00cc 0020A0E3 				MOV R2, #0 //count
+ 115 00d0 0030A0E3 				MOV R3, #0 // i
+ 116 00d4 010053E1 		forW:	CMP R3, R1
+ 117 00d8 050000AA 				BGE finW
+ 118              	
+ 119 00dc 0340D0E7 				LDRB R4,[R0,R3]
+ 120 00e0 190054E3 				CMP R4, #25
+ 121 00e4 000000AA 				BGE increase
+ 122 00e8 012082E2 				ADD R2,R2, #1
+ 123              	
+ 124 00ec 013083E2 		increase: ADD R3,R3, #1
+ 125 00f0 F7FFFFEA 				B forW
+ 126              	
+ 127 00f4 0200A0E1 		finW:	mov R0, R2
+ 128 00f8 1008BDE8 				pop {R4, fp}
+ 129 00fc 0EF0A0E1 				mov pc, lr
+ 130 0100 9B0D0000 	  		.end
+ 130      C62D0000 
+ 130      9F040000 
+DEFINED SYMBOLS
+           ../misc.S:2      *ABS*:00000d9b COEF1
+           ../misc.S:3      *ABS*:00002dc6 COEF2
+           ../misc.S:4      *ABS*:0000049f COEF3
+           ../misc.S:14     .text:00000000 rgb2gray
+           ../misc.S:46     .text:0000003c div16384
+           ../misc.S:62     .text:00000064 apply_gaussian
+           ../misc.S:111    .text:000000c4 countWhite
+           ../misc.S:16     .text:00000000 $a
+           ../misc.S:52     .text:00000048 loop
+           ../misc.S:57     .text:0000005c fin
+           ../misc.S:76     .text:00000078 for1
+           ../misc.S:107    .text:000000c0 fin1
+           ../misc.S:81     .text:00000084 for2
+           ../misc.S:104    .text:000000b8 fin2
+           ../misc.S:116    .text:000000d4 forW
+           ../misc.S:127    .text:000000f4 finW
+           ../misc.S:124    .text:000000ec increase
+           ../misc.S:130    .text:00000100 $d
+                   .debug_aranges:0000000c $d
+
+UNDEFINED SYMBOLS
+gaussian
